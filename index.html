@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InkPage — Turn Text Into Handwriting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&family=Homemade+Apple&family=Shadows+Into+Light&family=Reenie+Beanie&family=Kalam:wght@300;400;700&family=Nanum+Pen+Script&family=Gochi+Hand&family=Patrick+Hand&family=Permanent+Marker&family=Dancing+Script:wght@400..700&family=Sacramento&family=Alex+Brush&family=Yellowtail&family=Satisfy&family=Great+Vibes&family=Marck+Script&family=Mea+Culpa&family=Indie+Flower&family=Just+Another+Hand&family=Zeyada&family=Rock+Salt&family=Waiting+for+the+Sunrise&family=Covered+By+Your+Grace&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="brand">
+    <span class="brand-mark">Ink<em>Page</em></span>
+  </div>
+  <nav class="site-nav">
+    <a href="#editor" class="nav-cta">Open editor</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-copy">
+    <p class="eyebrow">free · no limits · no signup</p>
+    <h1>Type it. <span class="ink-flip">Watch it become handwriting.</span></h1>
+    <p class="hero-sub">Paste your notes, pick a hand, and get a page that looks written — not typed. Built for students who need real study material fast.</p>
+    <a href="#editor" class="btn-primary">Start writing →</a>
+  </div>
+  <div class="hero-demo">
+    <div class="hero-paper" id="heroPaper">
+      <div class="hero-paper-text" id="heroDemoText"></div>
+    </div>
+  </div>
+</section>
+
+<main class="editor-shell" id="editor">
+  <aside class="controls">
+
+    <div class="control-group">
+      <label for="fontSelect">Handwriting</label>
+      <select id="fontSelect"></select>
+    </div>
+
+    <div class="control-group">
+      <label for="customFontInput">Upload your own handwriting</label>
+      <input type="file" id="customFontInput" accept=".ttf,.otf,.woff,.woff2" class="file-input">
+      <p class="slider-hint" id="customFontStatus">.ttf or .otf — scan your handwriting free at calligraphr.com</p>
+    </div>
+
+    <div class="control-group">
+      <label for="paperSelect">Paper</label>
+      <select id="paperSelect">
+        <option value="plain">Plain</option>
+        <option value="ruled" selected>Ruled</option>
+        <option value="grid">Grid</option>
+        <option value="dotted">Dotted</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="inkColor">Ink</label>
+      <select id="inkColor">
+        <option value="#1B2A4A" selected>Blue-black</option>
+        <option value="#0D3B66">Blue</option>
+        <option value="#1A1A1A">Black</option>
+        <option value="#7A1F1F">Red</option>
+        <option value="#0F4C3A">Green</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <div class="slider-label-row">
+        <label for="fontSize">Size <span class="value-badge" id="fontSizeVal">26</span></label>
+        <button type="button" class="reset-link" data-target="fontSize" data-default="26">Reset</button>
+      </div>
+      <input type="range" id="fontSize" min="18" max="40" value="26">
+      <p class="slider-hint">Recommended: 24–28</p>
+    </div>
+
+    <div class="control-group">
+      <div class="slider-label-row">
+        <label for="lineHeight">Line spacing <span class="value-badge" id="lineHeightVal">42</span></label>
+        <button type="button" class="reset-link" data-target="lineHeight" data-default="42">Reset</button>
+      </div>
+      <input type="range" id="lineHeight" min="30" max="60" value="42">
+      <p class="slider-hint">Recommended: 38–44</p>
+    </div>
+
+    <div class="control-group">
+      <div class="slider-label-row">
+        <label for="jitter">Natural wobble <span class="value-badge" id="jitterVal">4</span></label>
+        <button type="button" class="reset-link" data-target="jitter" data-default="4">Reset</button>
+      </div>
+      <input type="range" id="jitter" min="0" max="10" value="4">
+      <p class="slider-hint">Recommended: 3–5 for realism</p>
+    </div>
+
+    <div class="control-group checkboxes">
+      <label class="checkbox-row"><input type="checkbox" id="marginLine" checked> Margin line</label>
+      <label class="checkbox-row"><input type="checkbox" id="showHoles"> Punch holes</label>
+    </div>
+
+    <div class="control-group">
+      <button id="clearBtn" class="btn-ghost">Clear text</button>
+    </div>
+
+    <div class="control-group export-group">
+      <button id="downloadPdf" class="btn-primary full">Download PDF</button>
+      <button id="downloadPng" class="btn-secondary full">Download PNG</button>
+      <p class="fine-print">Every page, every font, full resolution. Always free.</p>
+    </div>
+
+  </aside>
+
+  <section class="editor-main">
+    <div class="editor-toolbar">
+      <textarea id="sourceText" placeholder="Type or paste your notes here...">Human Reproduction — Chapter 2
+
+The male reproductive system consists of a pair of testes,
+accessory ducts, glands, and the external genitalia.
+
+Spermatogenesis is the process of formation of sperm from
+the primordial germ cells, which occurs in the seminiferous
+tubules of the testis.</textarea>
+    </div>
+    <div class="page-view-wrap">
+      <div id="pageContainer" class="pages"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <p>Made by Arham Bukhari with the help of Tars (Arham's personal Assistant) — built for students, free forever.</p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="js/fonts.js"></script>
+<script src="js/paginate.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

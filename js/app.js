@@ -134,9 +134,42 @@
       renderTextToSheet(textEl, lines, {
         font, size, ink, lineHeightPx: lh, jitterAmt: jAmt
       });
-      pageContainer.appendChild(sheet);
+      const frame = document.createElement("div");
+      frame.className = "sheet-frame";
+      frame.appendChild(sheet);
+      pageContainer.appendChild(frame);
+    });
+
+    applyResponsiveScale();
+  }
+
+  // ---------- Responsive scaling ----------
+  // The sheet itself always stays a fixed A4 pixel size internally
+  // (so export/html2canvas capture is always full, correct resolution).
+  // We just visually shrink it to fit the available viewport width
+  // via CSS transform, and resize the wrapper box to match so layout
+  // (scrolling, spacing) stays correct.
+  const SHEET_W = 794;
+  const SHEET_H = 1123;
+
+  function applyResponsiveScale() {
+    const wrapWidth = pageContainer.parentElement.clientWidth;
+    const availableWidth = Math.max(200, wrapWidth - 8); // small breathing room
+    const scale = Math.min(1, availableWidth / SHEET_W);
+
+    document.querySelectorAll(".sheet-frame").forEach(frame => {
+      const sheet = frame.querySelector(".sheet");
+      sheet.style.transform = `scale(${scale})`;
+      frame.style.width = (SHEET_W * scale) + "px";
+      frame.style.height = (SHEET_H * scale) + "px";
     });
   }
+
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(applyResponsiveScale, 120);
+  });
 
   // ---------- Hero demo (typewriter into handwriting) ----------
   function runHeroDemo() {
@@ -157,11 +190,42 @@
 
   // ---------- Export ----------
   async function exportPages(format) {
-    const sheets = pageContainer.querySelectorAll(".sheet");
-    if (!sheets.length) return;
+    const visibleSheets = pageContainer.querySelectorAll(".sheet");
+    if (!visibleSheets.length) return;
     const btn = format === "pdf" ? downloadPdfBtn : downloadPngBtn;
     const originalLabel = btn.textContent;
     btn.disabled = true;
+
+    // Build fresh, full-size (unscaled) sheets off-screen for capture.
+    // This avoids any issue with the visible copies being CSS-scaled
+    // down for mobile display, or clipped by a scroll container.
+    const font = currentFont();
+    const size = parseInt(fontSize.value, 10);
+    const lh = parseInt(lineHeight.value, 10);
+    const jAmt = parseInt(jitter.value, 10);
+    const ink = inkColor.value;
+    const paper = paperSelect.value;
+    const showMargin = marginLine.checked;
+    const showPunch = showHoles.checked;
+    const topBottomPadding = 36 + 40;
+    const sheetInnerHeight = 1123 - topBottomPadding;
+    const linesPerPage = estimateLinesPerPage(lh, sheetInnerHeight);
+    const leftPadding = showMargin ? 90 : 32;
+    const charsPerLine = estimateCharsPerLine(size, font.sizeAdjust, leftPadding);
+    const pages = paginateText(sourceText.value, { charsPerLine, linesPerPage });
+
+    const offscreen = document.createElement("div");
+    offscreen.style.position = "fixed";
+    offscreen.style.top = "-99999px";
+    offscreen.style.left = "-99999px";
+    document.body.appendChild(offscreen);
+
+    const sheets = pages.map(lines => {
+      const { sheet, textEl } = buildSheet(paper, showMargin, showPunch);
+      renderTextToSheet(textEl, lines, { font, size, ink, lineHeightPx: lh, jitterAmt: jAmt });
+      offscreen.appendChild(sheet);
+      return sheet;
+    });
 
     // Large documents need a lower capture scale or the browser can run out
     // of memory / time mid-batch and silently fail on later pages.
@@ -211,6 +275,7 @@
       console.error("Export failed", err);
       alert("Export failed — try again, or try a shorter section of text first.");
     } finally {
+      offscreen.remove();
       btn.textContent = originalLabel;
       btn.disabled = false;
     }

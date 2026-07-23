@@ -369,12 +369,16 @@ input[type=range]{ accent-color: var(--pen-red); }
   .editor-shell{ padding: 0 12px 48px; gap: 20px; }
   .controls{ padding: 18px; }
   .inline-pair{ grid-template-columns: 1fr; gap: 16px; }
-  /* Bigger touch targets for sliders on touch devices */
+  /* iOS Safari auto-zooms into any input/select under 16px font-size on focus
+     and won't zoom back out - so all interactive form elements must stay
+     at exactly 16px (1rem at the default 16px root) regardless of the
+     smaller :root font-size set above for this breakpoint. */
+  select, input[type=text], textarea, .file-input{ font-size: 16px !important; }
   input[type=range]{ height: 28px; }
-  select{ padding: 12px 10px; font-size: 1rem; }
+  select{ padding: 12px 10px; }
   .btn-primary, .btn-secondary, .btn-ghost{ padding: 13px 20px; font-size: 1rem; }
   .page-view-wrap{ padding: 12px; max-height: 70vh; }
-  #sourceText{ min-height: 130px; font-size: 1rem; }
+  #sourceText{ min-height: 130px; }
   .export-group{ padding-bottom: env(safe-area-inset-bottom, 8px); }
   .full{ margin-bottom: 12px; }
   .controls{ padding-bottom: 28px; }

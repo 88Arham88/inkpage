@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://88arham88.github.io/inkpage/sitemap.xml

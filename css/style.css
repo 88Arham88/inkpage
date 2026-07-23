@@ -361,7 +361,7 @@ input[type=range]{ accent-color: var(--pen-red); }
   .site-header{ padding: 14px 16px; }
   .brand-mark{ font-size: 1.1rem; }
   .nav-cta{ padding: 7px 14px; font-size: 0.85rem; }
-  .hero{ padding: 32px 16px 56px; gap: 32px; }
+  .hero{ padding: 32px 16px 40px; gap: 20px; }
   .hero h1{ font-size: 1.8rem; }
   .hero-sub{ font-size: 0.98rem; }
   .hero-paper{ padding: 24px 20px; min-height: 240px; }
@@ -375,6 +375,10 @@ input[type=range]{ accent-color: var(--pen-red); }
   .btn-primary, .btn-secondary, .btn-ghost{ padding: 13px 20px; font-size: 1rem; }
   .page-view-wrap{ padding: 12px; max-height: 70vh; }
   #sourceText{ min-height: 130px; font-size: 1rem; }
+  .export-group{ padding-bottom: env(safe-area-inset-bottom, 8px); }
+  .full{ margin-bottom: 12px; }
+  .controls{ padding-bottom: 28px; }
+  .editor-shell{ padding-bottom: 80px; }
 }
 
 /* ---------- Reduced motion ---------- */

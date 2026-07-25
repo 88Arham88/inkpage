@@ -261,7 +261,18 @@
         for (let i = 0; i < sheets.length; i++) {
           btn.textContent = `Rendering ${i + 1}/${sheets.length}…`;
           try {
-            const canvas = await html2canvas(sheets[i], { scale, useCORS: true, backgroundColor: "#FFFFFF" });
+            const canvas = await html2canvas(sheets[i], {
+              scale, useCORS: true, backgroundColor: "#FFFFFF",
+              onclone: async (clonedDoc) => {
+                // html2canvas renders from an internal clone of the DOM,
+                // which does not automatically inherit "already loaded"
+                // web fonts from the live page - it must confirm its own
+                // fonts are ready before we let html2canvas paint it.
+                if (clonedDoc.fonts && clonedDoc.fonts.ready) {
+                  await clonedDoc.fonts.ready;
+                }
+              }
+            });
             const link = document.createElement("a");
             link.download = `inkpage-${i + 1}.png`;
             link.href = canvas.toDataURL("image/png");
@@ -279,7 +290,14 @@
         for (let i = 0; i < sheets.length; i++) {
           btn.textContent = `Rendering ${i + 1}/${sheets.length}…`;
           try {
-            const canvas = await html2canvas(sheets[i], { scale, useCORS: true, backgroundColor: "#FFFFFF" });
+            const canvas = await html2canvas(sheets[i], {
+              scale, useCORS: true, backgroundColor: "#FFFFFF",
+              onclone: async (clonedDoc) => {
+                if (clonedDoc.fonts && clonedDoc.fonts.ready) {
+                  await clonedDoc.fonts.ready;
+                }
+              }
+            });
             const imgData = canvas.toDataURL("image/jpeg", 0.88);
             if (addedAny) pdf.addPage();
             pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);

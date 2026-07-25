@@ -13,12 +13,15 @@
 
 *{ box-sizing: border-box; }
 
+html{ overflow-x: hidden; }
 body{
   margin:0;
   background: var(--paper-cream);
   color: var(--ink-navy);
   font-family: 'Inter', -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 a{ color: inherit; text-decoration:none; }

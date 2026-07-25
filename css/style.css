@@ -296,7 +296,7 @@ input[type=range]{ accent-color: var(--pen-red); }
   box-shadow: var(--shadow);
   position: relative;
   overflow:hidden;
-  padding: 36px 50px 40px 90px;
+  padding: 36px 30px 40px 90px;
 }
 .sheet.no-margin{
   padding-left: 32px;

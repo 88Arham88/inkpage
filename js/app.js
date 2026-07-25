@@ -59,7 +59,6 @@
 
     lines.forEach((line, li) => {
       const lineDiv = document.createElement("div");
-      lineDiv.style.height = opts.lineHeightPx + "px";
       if (line === "") {
         lineDiv.innerHTML = "&nbsp;";
         sheetTextEl.appendChild(lineDiv);
@@ -102,10 +101,10 @@
   }
 
   function estimateCharsPerLine(fontSizePx, sizeAdjust, leftPadding) {
-    // Rough heuristic: average handwriting-font glyph width ~0.52em
+    // Rough heuristic: average handwriting-font glyph width ~0.44em
     const emPx = fontSizePx * sizeAdjust;
-    const avgCharWidth = emPx * 0.52;
-    const usableWidthPx = 794 - leftPadding - 50; // sheet width minus left/right padding
+    const avgCharWidth = emPx * 0.44;
+    const usableWidthPx = 794 - leftPadding - 30; // sheet width minus left/right padding
     return Math.max(10, Math.floor(usableWidthPx / avgCharWidth));
   }
 

@@ -227,8 +227,11 @@
     // Make sure this specific font is actually loaded before we capture -
     // otherwise html2canvas can silently snapshot the fallback system font
     // if this font hasn't been rendered/used anywhere yet on the page.
+    // document.fonts.load() only accepts a single font name (no comma-
+    // separated fallback list), so we must strip that out first.
+    const primaryFontName = font.family.split(",")[0].trim();
     try {
-      await document.fonts.load(`${size}px ${font.family}`);
+      await document.fonts.load(`${size}px ${primaryFontName}`);
       await document.fonts.ready;
     } catch (fontErr) {
       console.warn("Font load check failed, proceeding anyway", fontErr);
@@ -240,6 +243,10 @@
       offscreen.appendChild(sheet);
       return sheet;
     });
+
+    // Give the browser a couple of paint frames to actually apply the
+    // now-loaded font to these freshly-created elements before capturing.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     // Large documents need a lower capture scale or the browser can run out
     // of memory / time mid-batch, and PNG at high scale across many pages

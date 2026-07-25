@@ -101,10 +101,15 @@
   }
 
   function estimateCharsPerLine(fontSizePx, sizeAdjust, leftPadding) {
-    // Rough heuristic: average handwriting-font glyph width ~0.44em
+    // Rough heuristic: average handwriting-font glyph width ~0.5em.
+    // NOTE: going tighter than this causes real glyph overlap in the
+    // actual rendered font (garbled/merged-looking letters), not just
+    // wasted margin - handwriting fonts are wider per-character than
+    // this formula assumes, so this value should not be reduced further
+    // without visually testing every font in the library.
     const emPx = fontSizePx * sizeAdjust;
-    const avgCharWidth = emPx * 0.44;
-    const usableWidthPx = 794 - leftPadding - 30; // sheet width minus left/right padding
+    const avgCharWidth = emPx * 0.5;
+    const usableWidthPx = 794 - leftPadding - 40; // sheet width minus left/right padding
     return Math.max(10, Math.floor(usableWidthPx / avgCharWidth));
   }
 
@@ -219,6 +224,16 @@
     offscreen.style.left = "-99999px";
     document.body.appendChild(offscreen);
 
+    // Make sure this specific font is actually loaded before we capture -
+    // otherwise html2canvas can silently snapshot the fallback system font
+    // if this font hasn't been rendered/used anywhere yet on the page.
+    try {
+      await document.fonts.load(`${size}px ${font.family}`);
+      await document.fonts.ready;
+    } catch (fontErr) {
+      console.warn("Font load check failed, proceeding anyway", fontErr);
+    }
+
     const sheets = pages.map(lines => {
       const { sheet, textEl } = buildSheet(paper, showMargin, showPunch);
       renderTextToSheet(textEl, lines, { font, size, ink, lineHeightPx: lh, jitterAmt: jAmt });
@@ -227,8 +242,9 @@
     });
 
     // Large documents need a lower capture scale or the browser can run out
-    // of memory / time mid-batch and silently fail on later pages.
-    const scale = sheets.length > 15 ? 1.5 : sheets.length > 6 ? 2 : 3;
+    // of memory / time mid-batch, and PNG at high scale across many pages
+    // produces enormous files. Scale down further as page count grows.
+    const scale = sheets.length > 25 ? 1 : sheets.length > 15 ? 1.3 : sheets.length > 6 ? 1.8 : 2.5;
     let failedPages = [];
 
     try {
@@ -249,15 +265,15 @@
         }
       } else {
         const { jsPDF } = window.jspdf;
-        const pdf = new jsPDF({ unit: "mm", format: "a4" });
+        const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
         let addedAny = false;
         for (let i = 0; i < sheets.length; i++) {
           btn.textContent = `Rendering ${i + 1}/${sheets.length}…`;
           try {
             const canvas = await html2canvas(sheets[i], { scale, useCORS: true, backgroundColor: "#FFFFFF" });
-            const imgData = canvas.toDataURL("image/png");
+            const imgData = canvas.toDataURL("image/jpeg", 0.88);
             if (addedAny) pdf.addPage();
-            pdf.addImage(imgData, "PNG", 0, 0, 210, 297);
+            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
             addedAny = true;
           } catch (pageErr) {
             console.error(`Page ${i + 1} failed`, pageErr);

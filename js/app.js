@@ -249,9 +249,11 @@
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     // Large documents need a lower capture scale or the browser can run out
-    // of memory / time mid-batch, and PNG at high scale across many pages
-    // produces enormous files. Scale down further as page count grows.
-    const scale = sheets.length > 25 ? 1 : sheets.length > 15 ? 1.3 : sheets.length > 6 ? 1.8 : 2.5;
+    // of memory / time mid-batch. JPEG compression (below) keeps file size
+    // reasonable even at higher scale, so we can afford more resolution
+    // than before - higher resolution also reduces any pixel-level
+    // ambiguity from overlapping jittered character glyphs.
+    const scale = sheets.length > 25 ? 1.5 : sheets.length > 15 ? 2 : sheets.length > 6 ? 2.5 : 3;
     let failedPages = [];
 
     try {

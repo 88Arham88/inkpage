@@ -224,28 +224,53 @@
     offscreen.style.left = "-99999px";
     document.body.appendChild(offscreen);
 
-    // Make sure this specific font is actually loaded before we capture -
-    // otherwise html2canvas can silently snapshot the fallback system font
-    // if this font hasn't been rendered/used anywhere yet on the page.
-    // document.fonts.load() only accepts a single font name (no comma-
-    // separated fallback list), so we must strip that out first.
-    const primaryFontName = font.family.split(",")[0].trim();
+    // Embed the actual font bytes directly as a data-URI @font-face,
+    // rather than relying on html2canvas to correctly detect an
+    // externally-loaded Google Font during its internal DOM clone -
+    // that detection has proven unreliable. This guarantees the font
+    // is available with zero network/timing dependency during capture.
+    let exportFontFamily = font.family;
     try {
-      await document.fonts.load(`${size}px ${primaryFontName}`);
-      await document.fonts.ready;
-    } catch (fontErr) {
-      console.warn("Font load check failed, proceeding anyway", fontErr);
+      const primaryFontName = font.family.split(",")[0].replace(/'/g, "").trim();
+      const isCustomUpload = CUSTOM_FONTS.some(f => f.id === font.id);
+      if (!isCustomUpload) {
+        const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(primaryFontName).replace(/%20/g, "+")}:wght@${font.weight}&display=swap`;
+        const cssRes = await fetch(cssUrl);
+        const cssText = await cssRes.text();
+        const match = cssText.match(/src:\s*url\(([^)]+)\)\s*format\('woff2'\)/);
+        if (match) {
+          const fontRes = await fetch(match[1]);
+          const fontBlob = await fontRes.blob();
+          const fontDataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(fontBlob);
+          });
+          const localFamilyName = `ExportFont_${Date.now()}`;
+          const styleEl = document.createElement("style");
+          styleEl.textContent = `@font-face { font-family: '${localFamilyName}'; src: url(${fontDataUrl}) format('woff2'); }`;
+          offscreen.appendChild(styleEl);
+          exportFontFamily = `'${localFamilyName}'`;
+          const embeddedFontFace = new FontFace(localFamilyName, `url(${fontDataUrl})`);
+          await embeddedFontFace.load();
+          document.fonts.add(embeddedFontFace);
+        }
+      }
+    } catch (fontEmbedErr) {
+      console.warn("Font embedding failed, falling back to normal font reference", fontEmbedErr);
     }
+    const exportFont = { ...font, family: exportFontFamily };
 
     const sheets = pages.map(lines => {
       const { sheet, textEl } = buildSheet(paper, showMargin, showPunch);
-      renderTextToSheet(textEl, lines, { font, size, ink, lineHeightPx: lh, jitterAmt: jAmt });
+      renderTextToSheet(textEl, lines, { font: exportFont, size, ink, lineHeightPx: lh, jitterAmt: jAmt });
       offscreen.appendChild(sheet);
       return sheet;
     });
 
     // Give the browser a couple of paint frames to actually apply the
-    // now-loaded font to these freshly-created elements before capturing.
+    // now-embedded font to these freshly-created elements before capturing.
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     // Large documents need a lower capture scale or the browser can run out

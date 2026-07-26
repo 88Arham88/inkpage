@@ -192,6 +192,127 @@
     tick();
   }
 
+  // ---------- Canvas-based export rendering ----------
+  // Drawing pages directly via Canvas 2D instead of using html2canvas.
+  // Canvas text rendering goes through the browser's real font engine
+  // directly (no DOM-cloning step involved), so once a font is confirmed
+  // loaded via document.fonts, it reliably applies - this sidesteps the
+  // font-detection unreliability html2canvas kept exhibiting. Bonus:
+  // canvas measureText() gives exact pixel widths per character, so
+  // pagination here is precise instead of an estimate.
+  function wrapParagraphByMeasuredWidth(paragraph, ctx, maxWidth) {
+    if (paragraph.trim() === "") return [""];
+    const words = paragraph.split(/\s+/);
+    const lines = [];
+    let current = "";
+    words.forEach(word => {
+      const trial = current ? current + " " + word : word;
+      if (ctx.measureText(trial).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = trial;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  function paginateByMeasuredWidth(rawText, ctx, maxWidth, linesPerPage) {
+    const paragraphs = rawText.split(/\n/);
+    let allLines = [];
+    paragraphs.forEach(p => {
+      allLines = allLines.concat(wrapParagraphByMeasuredWidth(p, ctx, maxWidth));
+    });
+    const pages = [];
+    for (let i = 0; i < allLines.length; i += linesPerPage) {
+      pages.push(allLines.slice(i, i + linesPerPage));
+    }
+    return pages.length ? pages : [[""]];
+  }
+
+  function drawSheetCanvas(lines, opts) {
+    const W = 794, H = 1123;
+    const dpr = opts.dpiScale || 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+
+    const leftPad = opts.showMargin ? 90 : 32;
+    const topPad = 36;
+
+    if (opts.paperType === "ruled") {
+      ctx.strokeStyle = "#B9CCE5";
+      ctx.lineWidth = 1;
+      for (let y = 36; y < H; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke();
+      }
+    } else if (opts.paperType === "grid") {
+      ctx.strokeStyle = "#C7D6EA";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 28) { ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); ctx.stroke(); }
+      for (let y = 0; y < H; y += 28) { ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); ctx.stroke(); }
+    } else if (opts.paperType === "dotted") {
+      ctx.fillStyle = "#B9CCE5";
+      for (let x = 12; x < W; x += 24) {
+        for (let y = 12; y < H; y += 24) {
+          ctx.beginPath(); ctx.arc(x, y, 1.1, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    if (opts.showMargin) {
+      ctx.strokeStyle = "rgba(178,58,50,0.55)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(70, 0); ctx.lineTo(70, H); ctx.stroke();
+    }
+    if (opts.showPunch) {
+      ctx.fillStyle = "#F7F0E3";
+      ctx.strokeStyle = "rgba(27,42,74,0.25)";
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) {
+        const holeY = H * ((i + 1) / 4);
+        ctx.beginPath(); ctx.arc(29, holeY, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
+
+    const primaryFamily = opts.font.family.split(",")[0].replace(/'/g, "").trim();
+    const fontPx = opts.size * opts.font.sizeAdjust;
+    ctx.font = `${opts.font.weight} ${fontPx}px "${primaryFamily}"`;
+    ctx.fillStyle = opts.ink;
+    ctx.textBaseline = "alphabetic";
+
+    let y = topPad + fontPx * 0.85;
+    lines.forEach(line => {
+      if (line === "") { y += opts.lineHeightPx; return; }
+      let x = leftPad;
+      [...line].forEach((ch, ci) => {
+        const w = ctx.measureText(ch).width;
+        if (opts.jitterAmt > 0 && ch !== " ") {
+          const seed = ci * 7 + ch.charCodeAt(0);
+          const rot = (seededRandom(seed) - 0.5) * opts.jitterAmt * (Math.PI / 180) * 3;
+          const dy = (seededRandom(seed + 1) - 0.5) * opts.jitterAmt * 0.5;
+          ctx.save();
+          ctx.translate(x + w / 2, y + dy);
+          ctx.rotate(rot);
+          ctx.fillText(ch, -w / 2, 0);
+          ctx.restore();
+        } else {
+          ctx.fillText(ch, x, y);
+        }
+        x += w;
+      });
+      y += opts.lineHeightPx;
+    });
+
+    return canvas;
+  }
+
   // ---------- Export ----------
   async function exportPages(format) {
     const visibleSheets = pageContainer.querySelectorAll(".sheet");
@@ -200,9 +321,6 @@
     const originalLabel = btn.textContent;
     btn.disabled = true;
 
-    // Build fresh, full-size (unscaled) sheets off-screen for capture.
-    // This avoids any issue with the visible copies being CSS-scaled
-    // down for mobile display, or clipped by a scroll container.
     const font = currentFont();
     const size = parseInt(fontSize.value, 10);
     const lh = parseInt(lineHeight.value, 10);
@@ -211,138 +329,67 @@
     const paper = paperSelect.value;
     const showMargin = marginLine.checked;
     const showPunch = showHoles.checked;
-    const topBottomPadding = 36 + 40;
-    const sheetInnerHeight = 1123 - topBottomPadding;
-    const linesPerPage = estimateLinesPerPage(lh, sheetInnerHeight);
-    const leftPadding = showMargin ? 90 : 32;
-    const charsPerLine = estimateCharsPerLine(size, font.sizeAdjust, leftPadding);
-    const pages = paginateText(sourceText.value, { charsPerLine, linesPerPage });
 
-    const offscreen = document.createElement("div");
-    offscreen.style.position = "fixed";
-    offscreen.style.top = "-99999px";
-    offscreen.style.left = "-99999px";
-    document.body.appendChild(offscreen);
-
-    // Embed the actual font bytes directly as a data-URI @font-face,
-    // rather than relying on html2canvas to correctly detect an
-    // externally-loaded Google Font during its internal DOM clone -
-    // that detection has proven unreliable. This guarantees the font
-    // is available with zero network/timing dependency during capture.
-    let exportFontFamily = font.family;
     try {
+      // Confirm the font is actually loaded before we measure/draw with it -
+      // canvas text rendering respects document.fonts reliably (no
+      // DOM-cloning step involved, unlike the html2canvas approach this
+      // replaces), so this check is meaningful here.
       const primaryFontName = font.family.split(",")[0].replace(/'/g, "").trim();
-      const isCustomUpload = CUSTOM_FONTS.some(f => f.id === font.id);
-      if (!isCustomUpload) {
-        const cssUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(primaryFontName).replace(/%20/g, "+")}:wght@${font.weight}&display=swap`;
-        const cssRes = await fetch(cssUrl);
-        const cssText = await cssRes.text();
-        const match = cssText.match(/src:\s*url\(([^)]+)\)\s*format\('woff2'\)/);
-        if (match) {
-          const fontRes = await fetch(match[1]);
-          const fontBlob = await fontRes.blob();
-          const fontDataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(fontBlob);
-          });
-          const localFamilyName = `ExportFont_${Date.now()}`;
-          const styleEl = document.createElement("style");
-          styleEl.textContent = `@font-face { font-family: '${localFamilyName}'; src: url(${fontDataUrl}) format('woff2'); }`;
-          offscreen.appendChild(styleEl);
-          exportFontFamily = `'${localFamilyName}'`;
-          const embeddedFontFace = new FontFace(localFamilyName, `url(${fontDataUrl})`);
-          await embeddedFontFace.load();
-          document.fonts.add(embeddedFontFace);
-        }
+      const fontPx = size * font.sizeAdjust;
+      try {
+        await document.fonts.load(`${font.weight} ${fontPx}px "${primaryFontName}"`);
+        await document.fonts.ready;
+      } catch (fontErr) {
+        console.warn("Font load check failed, proceeding anyway", fontErr);
       }
-    } catch (fontEmbedErr) {
-      console.warn("Font embedding failed, falling back to normal font reference", fontEmbedErr);
-    }
-    const exportFont = { ...font, family: exportFontFamily };
 
-    const sheets = pages.map(lines => {
-      const { sheet, textEl } = buildSheet(paper, showMargin, showPunch);
-      renderTextToSheet(textEl, lines, { font: exportFont, size, ink, lineHeightPx: lh, jitterAmt: jAmt });
-      offscreen.appendChild(sheet);
-      return sheet;
-    });
+      const topBottomPadding = 36 + 40;
+      const sheetInnerHeight = 1123 - topBottomPadding;
+      const linesPerPage = estimateLinesPerPage(lh, sheetInnerHeight);
+      const leftPadding = showMargin ? 90 : 32;
+      const maxTextWidth = 794 - leftPadding - 40;
 
-    // Give the browser a couple of paint frames to actually apply the
-    // now-embedded font to these freshly-created elements before capturing.
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const measureCanvas = document.createElement("canvas");
+      const measureCtx = measureCanvas.getContext("2d");
+      measureCtx.font = `${font.weight} ${fontPx}px "${primaryFontName}"`;
+      const pages = paginateByMeasuredWidth(sourceText.value, measureCtx, maxTextWidth, linesPerPage);
 
-    // Large documents need a lower capture scale or the browser can run out
-    // of memory / time mid-batch. JPEG compression (below) keeps file size
-    // reasonable even at higher scale, so we can afford more resolution
-    // than before - higher resolution also reduces any pixel-level
-    // ambiguity from overlapping jittered character glyphs.
-    const scale = sheets.length > 25 ? 1.5 : sheets.length > 15 ? 2 : sheets.length > 6 ? 2.5 : 3;
-    let failedPages = [];
+      // Large documents need a lower capture scale or files get unwieldy.
+      const scale = pages.length > 25 ? 1.5 : pages.length > 15 ? 2 : pages.length > 6 ? 2.5 : 3;
 
-    try {
       if (format === "png") {
-        for (let i = 0; i < sheets.length; i++) {
-          btn.textContent = `Rendering ${i + 1}/${sheets.length}…`;
-          try {
-            const canvas = await html2canvas(sheets[i], {
-              scale, useCORS: true, backgroundColor: "#FFFFFF",
-              onclone: async (clonedDoc) => {
-                // html2canvas renders from an internal clone of the DOM,
-                // which does not automatically inherit "already loaded"
-                // web fonts from the live page - it must confirm its own
-                // fonts are ready before we let html2canvas paint it.
-                if (clonedDoc.fonts && clonedDoc.fonts.ready) {
-                  await clonedDoc.fonts.ready;
-                }
-              }
-            });
-            const link = document.createElement("a");
-            link.download = `inkpage-${i + 1}.png`;
-            link.href = canvas.toDataURL("image/png");
-            link.click();
-            await new Promise(r => setTimeout(r, 60)); // let the download register before the next one
-          } catch (pageErr) {
-            console.error(`Page ${i + 1} failed`, pageErr);
-            failedPages.push(i + 1);
-          }
+        for (let i = 0; i < pages.length; i++) {
+          btn.textContent = `Rendering ${i + 1}/${pages.length}…`;
+          const canvas = drawSheetCanvas(pages[i], {
+            font, size, ink, lineHeightPx: lh, jitterAmt: jAmt,
+            paperType: paper, showMargin, showPunch, dpiScale: scale
+          });
+          const link = document.createElement("a");
+          link.download = `inkpage-${i + 1}.png`;
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+          await new Promise(r => setTimeout(r, 60));
         }
       } else {
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
-        let addedAny = false;
-        for (let i = 0; i < sheets.length; i++) {
-          btn.textContent = `Rendering ${i + 1}/${sheets.length}…`;
-          try {
-            const canvas = await html2canvas(sheets[i], {
-              scale, useCORS: true, backgroundColor: "#FFFFFF",
-              onclone: async (clonedDoc) => {
-                if (clonedDoc.fonts && clonedDoc.fonts.ready) {
-                  await clonedDoc.fonts.ready;
-                }
-              }
-            });
-            const imgData = canvas.toDataURL("image/jpeg", 0.88);
-            if (addedAny) pdf.addPage();
-            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
-            addedAny = true;
-          } catch (pageErr) {
-            console.error(`Page ${i + 1} failed`, pageErr);
-            failedPages.push(i + 1);
-          }
+        for (let i = 0; i < pages.length; i++) {
+          btn.textContent = `Rendering ${i + 1}/${pages.length}…`;
+          const canvas = drawSheetCanvas(pages[i], {
+            font, size, ink, lineHeightPx: lh, jitterAmt: jAmt,
+            paperType: paper, showMargin, showPunch, dpiScale: scale
+          });
+          const imgData = canvas.toDataURL("image/jpeg", 0.88);
+          if (i > 0) pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
         }
-        if (addedAny) pdf.save("inkpage.pdf");
-      }
-
-      if (failedPages.length) {
-        alert(`Most pages exported, but page(s) ${failedPages.join(", ")} failed. Try exporting again, or split into a shorter selection.`);
+        pdf.save("inkpage.pdf");
       }
     } catch (err) {
       console.error("Export failed", err);
       alert("Export failed — try again, or try a shorter section of text first.");
     } finally {
-      offscreen.remove();
       btn.textContent = originalLabel;
       btn.disabled = false;
     }

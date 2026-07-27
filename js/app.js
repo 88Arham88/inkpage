@@ -127,7 +127,7 @@
     const topBottomPadding = 36 + 40; // matches .sheet padding-top + padding-bottom
     const sheetInnerHeight = 1123 - topBottomPadding;
     const linesPerPage = estimateLinesPerPage(lh, sheetInnerHeight);
-    const leftPadding = marginLine.checked ? 90 : 32;
+    const leftPadding = marginLine.checked ? 78 : 32;
     const charsPerLine = estimateCharsPerLine(size, font.sizeAdjust, leftPadding);
 
     const pages = paginateText(sourceText.value, { charsPerLine, linesPerPage });
@@ -243,7 +243,7 @@
     ctx.fillStyle = "#FFFFFF";
     ctx.fillRect(0, 0, W, H);
 
-    const leftPad = opts.showMargin ? 90 : 32;
+    const leftPad = opts.showMargin ? 78 : 32;
     const topPad = 36;
 
     if (opts.paperType === "ruled") {
@@ -282,7 +282,7 @@
     }
 
     const primaryFamily = opts.font.family.split(",")[0].replace(/'/g, "").trim();
-    const fontPx = opts.size * opts.font.sizeAdjust;
+    const fontPx = opts.fontPxOverride || (opts.size * opts.font.sizeAdjust);
     ctx.font = `${opts.font.weight} ${fontPx}px "${primaryFamily}"`;
     ctx.fillStyle = opts.ink;
     ctx.textBaseline = "alphabetic";
@@ -311,6 +311,43 @@
     });
 
     return canvas;
+  }
+
+  // ---------- Auto-fit (export only) ----------
+  // Tries a range of scale factors on font-size + line-height together,
+  // re-measuring real wrapped-line counts each time via canvas measureText,
+  // and picks the LARGEST scale (least shrink, most readable) that achieves
+  // the FEWEST total pages. Never lets line-height fall below 1.15x the
+  // scaled font size - that ratio is the safe floor before jittered glyphs
+  // start visually overlapping (see drawSheetCanvas jitter behavior).
+  const AUTO_FIT_MIN_SCALE = 0.72;
+  const AUTO_FIT_STEP = 0.02;
+  const AUTO_FIT_MIN_LEADING_RATIO = 1.15;
+
+  function countPagesAtScale(scale, rawText, measureCtx, font, baseFontPx, baseLineHeight, maxWidth, sheetInnerHeight) {
+    let fontPx = baseFontPx * scale;
+    let lineHeightPx = baseLineHeight * scale;
+    const floorLineHeight = fontPx * AUTO_FIT_MIN_LEADING_RATIO;
+    if (lineHeightPx < floorLineHeight) lineHeightPx = floorLineHeight;
+
+    const primaryFamily = font.family.split(",")[0].replace(/'/g, "").trim();
+    measureCtx.font = `${font.weight} ${fontPx}px "${primaryFamily}"`;
+    const linesPerPage = estimateLinesPerPage(lineHeightPx, sheetInnerHeight);
+    const pages = paginateByMeasuredWidth(rawText, measureCtx, maxWidth, linesPerPage);
+    return { pages: pages.length, fontPx, lineHeightPx };
+  }
+
+  function computeAutoFit(rawText, measureCtx, font, baseFontPx, baseLineHeight, maxWidth, sheetInnerHeight) {
+    const baseline = countPagesAtScale(1.0, rawText, measureCtx, font, baseFontPx, baseLineHeight, maxWidth, sheetInnerHeight);
+
+    let best = { scale: 1.0, ...baseline };
+    for (let scale = 1.0 - AUTO_FIT_STEP; scale >= AUTO_FIT_MIN_SCALE; scale -= AUTO_FIT_STEP) {
+      const result = countPagesAtScale(scale, rawText, measureCtx, font, baseFontPx, baseLineHeight, maxWidth, sheetInnerHeight);
+      if (result.pages < best.pages) {
+        best = { scale, ...result };
+      }
+    }
+    return best; // { scale, pages, fontPx, lineHeightPx }
   }
 
   // ---------- Export ----------
@@ -346,13 +383,23 @@
 
       const topBottomPadding = 36 + 40;
       const sheetInnerHeight = 1123 - topBottomPadding;
-      const linesPerPage = estimateLinesPerPage(lh, sheetInnerHeight);
-      const leftPadding = showMargin ? 90 : 32;
+      const leftPadding = showMargin ? 78 : 32;
       const maxTextWidth = 794 - leftPadding - 40;
 
       const measureCanvas = document.createElement("canvas");
       const measureCtx = measureCanvas.getContext("2d");
       measureCtx.font = `${font.weight} ${fontPx}px "${primaryFontName}"`;
+
+      let effectiveFontPx = fontPx;
+      let effectiveLineHeight = lh;
+      const autoFitOn = document.getElementById("autoFit").checked;
+      if (autoFitOn) {
+        const fit = computeAutoFit(sourceText.value, measureCtx, font, fontPx, lh, maxTextWidth, sheetInnerHeight);
+        effectiveFontPx = fit.fontPx;
+        effectiveLineHeight = fit.lineHeightPx;
+        measureCtx.font = `${font.weight} ${effectiveFontPx}px "${primaryFontName}"`;
+      }
+      const linesPerPage = estimateLinesPerPage(effectiveLineHeight, sheetInnerHeight);
       const pages = paginateByMeasuredWidth(sourceText.value, measureCtx, maxTextWidth, linesPerPage);
 
       // Large documents need a lower capture scale or files get unwieldy.
@@ -362,8 +409,9 @@
         for (let i = 0; i < pages.length; i++) {
           btn.textContent = `Rendering ${i + 1}/${pages.length}…`;
           const canvas = drawSheetCanvas(pages[i], {
-            font, size, ink, lineHeightPx: lh, jitterAmt: jAmt,
-            paperType: paper, showMargin, showPunch, dpiScale: scale
+            font, size, ink, lineHeightPx: effectiveLineHeight, jitterAmt: jAmt,
+            paperType: paper, showMargin, showPunch, dpiScale: scale,
+            fontPxOverride: effectiveFontPx
           });
           const link = document.createElement("a");
           link.download = `inkpage-${i + 1}.png`;
@@ -377,8 +425,9 @@
         for (let i = 0; i < pages.length; i++) {
           btn.textContent = `Rendering ${i + 1}/${pages.length}…`;
           const canvas = drawSheetCanvas(pages[i], {
-            font, size, ink, lineHeightPx: lh, jitterAmt: jAmt,
-            paperType: paper, showMargin, showPunch, dpiScale: scale
+            font, size, ink, lineHeightPx: effectiveLineHeight, jitterAmt: jAmt,
+            paperType: paper, showMargin, showPunch, dpiScale: scale,
+            fontPxOverride: effectiveFontPx
           });
           const imgData = canvas.toDataURL("image/jpeg", 0.88);
           if (i > 0) pdf.addPage();
